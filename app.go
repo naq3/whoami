@@ -75,12 +75,18 @@ type Data struct {
 func main() {
 	flag.Parse()
 
+	// Mô phỏng lỗi crash khi khởi động để test CI/CD.
+	// Add this line when build cicd-v1fail
+    // log.Fatal("Simulating a startup crash for CI/CD testing.")
+
 	mux := http.NewServeMux()
 	mux.Handle("/data", handle(dataHandler, verbose))
 	mux.Handle("/echo", handle(echoHandler, verbose))
 	mux.Handle("/bench", handle(benchHandler, verbose))
 	mux.Handle("/api", handle(apiHandler, verbose))
 	mux.Handle("/health", handle(healthHandler, verbose))
+	mux.Handle("/healthcheck", handle(healthHandler, verbose))
+	mux.Handle("/log", handle(logHandler, verbose))
 	mux.Handle("/", handle(whoamiHandler, verbose))
 
 	serverGRPC := grpc.NewServer()
@@ -108,6 +114,19 @@ func main() {
 	log.Printf("Starting up with TLS on port %s", port)
 
 	log.Fatal(server.ListenAndServeTLS(cert, key))
+}
+
+func logHandler(w http.ResponseWriter, r *http.Request) {
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+        return
+    }
+    defer r.Body.Close()
+    // Print raw body content as string
+    // fmt.Println("Received body (raw):")
+    fmt.Println(string(body))
+    w.WriteHeader(http.StatusOK)
 }
 
 func setupMutualTLS(ca string) *tls.Config {
@@ -320,7 +339,12 @@ func healthHandler(w http.ResponseWriter, req *http.Request) {
 	} else {
 		mutexHealthState.RLock()
 		defer mutexHealthState.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(currentHealthState.StatusCode)
+		response := map[string]string{"version": "cicd-v3"}
+        if err := json.NewEncoder(w).Encode(response); err != nil {
+            log.Printf("could not encode health response: %v", err)
+        }
 	}
 }
 
